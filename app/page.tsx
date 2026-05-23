@@ -8,6 +8,27 @@ interface Cartridge { id: number; model_name: string; current_stock: number; }
 interface Printer { value: number; label: string; serial: string; pModel: string; cModel: string; cId: number; stock: number; }
 interface Tx { id: number; created_at: string; dept: string | null; model: string | null; action: string | null; qty: number; notes: string | null; }
 
+const DEPARTMENTS_LIST = [
+  "NURSING OFFICER", "FRONT RECEPTION LOBBY", "AUDITOR ROOM (BUNKER)", "EMERGENCY NURSING COUNTER", "BRONCHOSCOPE", "DR. SASMITA HOTA OPD-2",
+  "FIRE & SAFETY", "C-WARD HELP DESK", "EMERGENCY RECEPTION", "TPA DESK", "NURSING SUPERVISOR ROOM 1ST FLOOR", "Dr Hota OPD 2",
+  "BIOCHEMISTRY", "EEG", "ROOM NO. 17", "TELE RADIOLOGY", "FINANCE", "X-RAY", "ECHO ROOM", "OPD 1", "HEMATOLOGY", "MRD FRONT",
+  "DAILY YSIS", "HELP DESK F WARD", "HRD", "CATH LAB", "OT", "BLOOD BANK", "OPD 2", "MICROBIOLOGY", "DR. KALPANA DAS",
+  "DR. SUJIT PAHARI", "BIOMEDICAL", "TPA - DESK", "DR. JIGNESH PANDYA", "HELP DESK F WARD SECOND", "HDU SECOND FLOOR",
+  "RADIOLOGY", "CITY CENTER", "KITCHEN", "DR. AB BHATTACHARYA", "ONCOLOGY", "NEURO OPD", "CRS", "MEDICAL COLLEGE (NAIDU MAM)",
+  "PFT ROOM", "ONCOLOGY RECEPTION", "OPD -1 REPORT", "DR. DEVENDRA SINGH", "DR. SITENDU PATEL", "DR. P.P. MISHRA",
+  "SECOND FLOOR", "DR. PRANKUR PURI OPD 2", "ADMISSION OFFICE NURSING COLLEGE", "HEAP DESK FIRST FLOOR", "MICRO BIOLOGY",
+  "PURCHASE", "NURSING COLLEGE ACCOUNTS", "DR. ABHISHEK KAUSHLEY", "OT STORE", "TMT ROOM", "DR. ASHISH JAISWAL",
+  "IT", "MCH", "HDU NURSING", "OPD 1 DR. VIJAY KUMAR SRIWASH", "HEALP DESK E WARD", "MAIN STORE", "TREATMENT PLANNING",
+  "DR. AKASH", "DR. AMUL", "BLOOD BANK", "ENDOSCOPY", "DIETRY", "F&B", "SANJAY SIR", "MRD BASEMENT", "MARKETING",
+  "REDIOTHERAPY", "HEALTH CHECKUP DESK", "ROOM NO. 17", "DR. SUSHREE PARIDA", "DR. MANOJ KU. RAI OPD 1",
+  "DR. SUNIL K KENDIA", "DR. GAURI S ASATI", "DR. ANIL GUPAT", "B.WORD SECOND FLOOR", "DIETICIAN", "BOOD BANK",
+  "USG", "SAMPLE COLLECTION", "A WARD", "D WARD", "B WARD", "IP BILLING", "E&B", "OPD 1 DR. VIJAY KUMAR SRIWASH",
+  "DR. JAYAVELU", "DR. MANOJ KU.", "DEVESH GOPAL SIR", "DR. AVINASH", "BOI MEDICAL", "DR. SANDHYA CANDEL",
+  "URODYNAMIC", "ADMIN", "DR. SURYANSH NEMA", "DR. J. KANASKER", "OT NISHIT SIR.", "PHYSIOTHERAPY", "EEG (PORTABLE)",
+  "MRD SEEMA", "NURSING COLLEGE RECEPTION", "Dr.Asati Sir (OPD 2)", "AUDIMETRY ROOM", "HISTOPATHOLOGY",
+  "DR. D. K. DAS", "DR. LAJPAT AGRAWAL", "G WARD", "QUALITY"
+].sort().map(d => ({ value: d, label: d }));
+
 export default function CommandCenter() {
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<"DASH" | "ADMIN">("DASH");
@@ -18,6 +39,8 @@ export default function CommandCenter() {
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
 
   const [selP, setSelP] = useState<Printer | null>(null);
+  const [selDeptDash, setSelDeptDash] = useState<{ value: string; label: string } | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
   const [mode, setMode] = useState<"STOCK" | "REPAIR">("STOCK");
   const [qty, setQty] = useState(1);
   const [notes, setNotes] = useState("");
@@ -25,6 +48,7 @@ export default function CommandCenter() {
   const [newStock, setNewStock] = useState(0);
   const [selC, setSelC] = useState<number | null>(null);
   const [nDept, setNDept] = useState("");
+  const [selDeptObj, setSelDeptObj] = useState<{ value: string; label: string } | null>(null);
   const [nSerial, setNSerial] = useState("");
   const [nPModel, setNPModel] = useState("");
   const [nReq, setNReq] = useState<number | null>(null);
@@ -117,11 +141,11 @@ export default function CommandCenter() {
   }
 
   async function addDept() {
-    if (!nDept || !nSerial || !nReq || !nPModel) return notify("All fields req.", "error");
+    if (!selDeptObj || !nSerial || !nReq || !nPModel) return notify("All fields req.", "error");
     setLoading(true);
     try {
-      await supabase.from("printers").insert([{ department_name: nDept.toUpperCase(), serial_number: nSerial.toUpperCase(), printer_model: nPModel.toUpperCase(), cartridge_id: nReq }]);
-      setNDept(""); setNSerial(""); setNPModel(""); setNReq(null);
+      await supabase.from("printers").insert([{ department_name: selDeptObj.value.toUpperCase(), serial_number: nSerial.toUpperCase(), printer_model: nPModel.toUpperCase(), cartridge_id: nReq }]);
+      setSelDeptObj(null); setNSerial(""); setNPModel(""); setNReq(null);
       notify("Hardware added.", "success");
     } catch (e) { notify("Error", "error"); }
     setLoading(false);
@@ -146,6 +170,42 @@ export default function CommandCenter() {
     XLSX.writeFile(wb, `Apollo_Log.xlsx`); notify("Exported.", "success");
   }
 
+  async function createSampleData() {
+    setLoading(true);
+    try {
+      // Create sample cartridges
+      const cartridges = [
+        { model_name: "HP 12A", current_stock: 15 },
+        { model_name: "HP 35A", current_stock: 12 },
+        { model_name: "Canon NPG-28", current_stock: 8 },
+      ];
+      
+      const { data: cartData } = await supabase.from("cartridge_catalog").insert(cartridges).select();
+      
+      if (cartData && cartData.length > 0) {
+        // Create sample printers using the departments list
+        const sampleDepts = ["OPD 1", "OPD 2", "BIOCHEMISTRY", "EMERGENCY RECEPTION", "X-RAY", "ECHO ROOM"];
+        const printerInserts = sampleDepts.map((dept, idx) => ({
+          department_name: dept,
+          printer_model: `HP LaserJet Pro M404${idx % 2 === 0 ? 'n' : ''}`,
+          serial_number: `HIND-IT-${1000 + idx}`,
+          cartridge_id: cartData[idx % cartData.length].id
+        }));
+        
+        await supabase.from("printers").insert(printerInserts);
+        notify("Sample data created! Refresh to see printers.", "success");
+        setTimeout(() => fetchData(), 1000);
+      }
+    } catch (e: any) {
+      if (e.message?.includes("duplicate")) {
+        notify("Sample data already exists", "error");
+      } else {
+        notify("Error creating sample data", "error");
+      }
+    }
+    setLoading(false);
+  }
+
   if (!mounted) return null;
   const low = catalog.filter(c => c.current_stock <= 3);
 
@@ -156,7 +216,10 @@ export default function CommandCenter() {
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
         <div><h1 className="text-xl font-bold">Apollo Operations Control</h1><p className="text-xs text-slate-500">Hardware & Consumables Ledger</p></div>
         <div className="flex gap-4">
-          <button onClick={fetchData} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">↻ Sync</button>
+          <button onClick={fetchData} disabled={loading} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">↻ Sync</button>
+          {printers.length === 0 && (
+            <button onClick={createSampleData} disabled={loading} className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm font-medium">+ Sample Data</button>
+          )}
           <div className="flex bg-slate-100 p-1 rounded">
             <button onClick={() => setView("DASH")} className={`px-4 py-1.5 rounded text-sm ${view === "DASH" ? "bg-white shadow" : "text-slate-500"}`}>Live</button>
             <button onClick={() => setView("ADMIN")} className={`px-4 py-1.5 rounded text-sm ${view === "ADMIN" ? "bg-white shadow" : "text-slate-500"}`}>Admin</button>
@@ -170,8 +233,54 @@ export default function CommandCenter() {
         {view === "DASH" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-5 bg-white p-6 rounded shadow-sm border border-slate-200">
-              <h2 className="font-bold mb-4">Select Department</h2>
-              <Select options={printers} value={selP} onChange={setSelP} placeholder="Search..." isClearable />
+              <h2 className="font-bold mb-2">Search Department</h2>
+              <Select options={DEPARTMENTS_LIST} value={selDeptDash} onChange={setSelDeptDash} placeholder="Search department..." isClearable />
+              
+              <h2 className="font-bold mb-4 mt-6">Select Printer by Department</h2>
+              {selDeptDash && (
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
+                  {printers.length === 0 ? (
+                    <p>📋 No printers found. Add printers in ADMIN → Deploy Hardware</p>
+                  ) : printers.filter(p => p.label.toUpperCase().trim() === selDeptDash.value.toUpperCase().trim()).length === 0 ? (
+                    <p>📋 No printers assigned to {selDeptDash.label} yet. Showing all available printers.</p>
+                  ) : (
+                    <p>✓ Found {printers.filter(p => p.label.toUpperCase().trim() === selDeptDash.value.toUpperCase().trim()).length} printer(s) in {selDeptDash.label}</p>
+                  )}
+                </div>
+              )}
+              <Select options={selDeptDash ? printers.filter(p => p.label.toUpperCase().trim() === selDeptDash.value.toUpperCase().trim()).length > 0 ? printers.filter(p => p.label.toUpperCase().trim() === selDeptDash.value.toUpperCase().trim()) : printers : printers} value={selP} onChange={setSelP} placeholder={printers.length === 0 ? "No printers available - Add in ADMIN" : "Search..."} isClearable isDisabled={printers.length === 0} />
+              
+              {selP && (
+                <div className="mt-4 bg-slate-50 p-4 rounded border">
+                  <h3 className="font-bold text-sm mb-3">Department Transaction History</h3>
+                  <div className="max-h-[200px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-white border-b sticky top-0">
+                        <tr>
+                          <th className="p-2 text-left">Cartridge</th>
+                          <th className="p-2 text-center">Issued</th>
+                          <th className="p-2 text-center">Returned</th>
+                          <th className="p-2 text-left">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {txs.filter(t => t.dept === selP.label && (t.action === 'ISSUED' || t.action === 'RECEIVED')).map((t, idx) => (
+                          <tr key={idx} className="hover:bg-white">
+                            <td className="p-2 font-medium">{t.model}</td>
+                            <td className="p-2 text-center text-red-600">{t.action === 'ISSUED' ? t.qty : '-'}</td>
+                            <td className="p-2 text-center text-green-600">{t.action === 'RECEIVED' ? t.qty : '-'}</td>
+                            <td className="p-2 text-xs">{new Date(t.created_at).toLocaleDateString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {txs.filter(t => t.dept === selP.label && (t.action === 'ISSUED' || t.action === 'RECEIVED')).length === 0 && (
+                      <p className="text-xs text-slate-500 p-3">No transactions found</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              
               {selP && (
                 <div className="mt-6">
                   <div className="bg-slate-50 p-4 rounded mb-4 grid grid-cols-2 gap-4 text-sm">
@@ -217,6 +326,32 @@ export default function CommandCenter() {
                 </tbody></table>
               </div>
             </div>
+
+            <div className="lg:col-span-12 bg-white rounded shadow-sm border border-slate-200 p-6">
+              <h2 className="font-bold mb-4">Stock Search & Availability</h2>
+              <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search cartridge models..." className="w-full p-3 border rounded mb-4 text-sm" />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {catalog.filter(c => c.model_name.toLowerCase().includes(searchTerm.toLowerCase())).map(c => {
+                  const inUse = printers.filter(p => p.cId === c.id).length;
+                  const statusColor = c.current_stock <= 3 ? 'bg-red-50' : c.current_stock <= 7 ? 'bg-yellow-50' : 'bg-green-50';
+                  const textColor = c.current_stock <= 3 ? 'text-red-700' : c.current_stock <= 7 ? 'text-yellow-700' : 'text-green-700';
+                  return (
+                    <div key={c.id} className={`${statusColor} p-4 rounded border`}>
+                      <p className="font-bold text-sm">{c.model_name}</p>
+                      <p className={`text-2xl font-bold ${textColor} mt-2`}>{c.current_stock}</p>
+                      <p className="text-xs text-slate-500 mt-1">Units in Stock</p>
+                      <p className="text-xs text-slate-600 mt-2">In Use: <span className="font-bold">{inUse}</span></p>
+                      <div className="mt-3 w-full bg-slate-200 rounded-full h-2">
+                        <div className={`h-2 rounded-full ${c.current_stock <= 3 ? 'bg-red-600' : c.current_stock <= 7 ? 'bg-yellow-600' : 'bg-green-600'}`} style={{width: `${Math.min((c.current_stock / 20) * 100, 100)}%`}}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {catalog.filter(c => c.model_name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
+                <p className="text-sm text-slate-500 text-center py-8">No cartridges found</p>
+              )}
+            </div>
           </div>
         )}
 
@@ -239,11 +374,11 @@ export default function CommandCenter() {
             <div className="space-y-6">
               <div className="bg-white p-6 rounded border shadow-sm space-y-3">
                 <h2 className="font-bold mb-2">Deploy Hardware</h2>
-                <input type="text" value={nDept} onChange={e=>setNDept(e.target.value)} placeholder="Dept (e.g. ICU)" className="w-full p-2 border rounded text-sm" />
+                <Select options={DEPARTMENTS_LIST} value={selDeptObj} onChange={setSelDeptObj} placeholder="Search department..." isClearable />
                 <input type="text" value={nPModel} onChange={e=>setNPModel(e.target.value)} placeholder="Printer Model" className="w-full p-2 border rounded text-sm" />
                 <input type="text" value={nSerial} onChange={e=>setNSerial(e.target.value)} placeholder="Serial Number" className="w-full p-2 border rounded text-sm" />
                 <select className="w-full p-2 border rounded text-sm" onChange={e=>setNReq(Number(e.target.value))} value={nReq || ""}><option value="" disabled>Requires Cartridge...</option>{catalog.map(c => <option key={c.id} value={c.id}>{c.model_name}</option>)}</select>
-                <button onClick={addDept} disabled={!nDept || !nPModel || !nSerial || !nReq} className="w-full bg-slate-800 text-white py-2 rounded text-sm">Register Printer</button>
+                <button onClick={addDept} disabled={!selDeptObj || !nPModel || !nSerial || !nReq} className="w-full bg-slate-800 text-white py-2 rounded text-sm">Register Printer</button>
               </div>
               <div className="bg-white p-6 rounded border shadow-sm space-y-3">
                 <h2 className="font-bold mb-2">New Cartridge Model</h2>
