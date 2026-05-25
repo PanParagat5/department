@@ -4,6 +4,22 @@ import Select from "react-select";
 import { supabase } from "../lib/supabase";
 import "./globals.css";
 
+// Consistent date formatting to prevent hydration mismatch
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${month}/${day}/${year}`;
+};
+
+const formatTime = (dateString: string) => {
+  const date = new Date(dateString);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
 interface Cartridge { id: number; model_name: string; current_stock: number; }
 interface Printer { value: number; label: string; serial: string; pModel: string; cModel: string; cId: number; stock: number; }
 interface Tx { id: number; created_at: string; dept: string | null; model: string | null; action: string | null; qty: number; notes: string | null; }
@@ -63,8 +79,25 @@ export default function CommandCenter() {
       .on("postgres_changes", { event: "*", schema: "public", table: "cartridge_catalog" }, fetchData)
       .on("postgres_changes", { event: "*", schema: "public", table: "printers" }, fetchData)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    
+    // Auto-refresh ledger every 15 days (1,296,000,000 ms)
+    const autoRefreshInterval = setInterval(fetchData, 15 * 24 * 60 * 60 * 1000);
+    
+    return () => { 
+      supabase.removeChannel(ch);
+      clearInterval(autoRefreshInterval);
+    };
   }, []);
+
+  // Auto-select printer when department is selected
+  useEffect(() => {
+    if (selDeptDash && printers.length > 0) {
+      const deptPrinters = printers.filter(p => p.label.toUpperCase().trim() === selDeptDash.value.toUpperCase().trim());
+      if (deptPrinters.length > 0) {
+        setSelP(deptPrinters[0]);
+      }
+    }
+  }, [selDeptDash, printers]);
 
   async function fetchData() {
     setLoading(true);
@@ -164,10 +197,28 @@ export default function CommandCenter() {
   async function dlExcel() {
     if (!txs.length) return notify("No data.", "error");
     const XLSX = await import("xlsx");
-    const data = txs.map(t => ({ Date: new Date(t.created_at).toLocaleDateString(), Time: new Date(t.created_at).toLocaleTimeString(), Dept: t.dept, Action: t.action, Qty: t.qty, Item: t.model, Notes: t.notes || "" }));
+    const data = txs.map(t => ({ Date: formatDate(t.created_at), Time: formatTime(t.created_at), Dept: t.dept, Action: t.action, Qty: t.qty, Item: t.model, Notes: t.notes || "" }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Log");
     XLSX.writeFile(wb, `Apollo_Log.xlsx`); notify("Exported.", "success");
+  }
+
+  async function exportStockToExcel() {
+    if (!catalog.length) return notify("No stock data.", "error");
+    const XLSX = await import("xlsx");
+    const data = catalog.map(c => ({ Model: c.model_name, "Current Stock": c.current_stock, "In Use": printers.filter(p => p.cId === c.id).length }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Master Stock");
+    XLSX.writeFile(wb, `Apollo_Master_Stock.xlsx`); notify("Stock exported.", "success");
+  }
+
+  async function exportPrintersToExcel() {
+    if (!printers.length) return notify("No printer data.", "error");
+    const XLSX = await import("xlsx");
+    const data = printers.map(p => ({ Department: p.label, "Printer Model": p.pModel, "Serial Number": p.serial, "Cartridge Type": p.cModel, "Cartridge Stock": p.stock }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Master Printers");
+    XLSX.writeFile(wb, `Apollo_Master_Printers.xlsx`); notify("Printers exported.", "success");
   }
 
   async function createSampleData() {
@@ -210,13 +261,18 @@ export default function CommandCenter() {
   const low = catalog.filter(c => c.current_stock <= 3);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 pb-12 font-sans">
+    <div className="min-h-screen text-slate-800 pb-12 font-sans" style={{ backgroundImage: 'url("/building.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed', backgroundColor: '#f1f5f9' }}>
       {toast && <div className={`fixed top-6 right-6 z-50 px-6 py-4 rounded shadow bg-white border-l-4 text-sm font-medium ${toast.type === 'success' ? 'border-green-500' : 'border-red-500'}`}>{toast.msg}</div>}
 
       <div className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div><h1 className="text-xl font-bold">Apollo Operations Control</h1><p className="text-xs text-slate-500">Hardware & Consumables Ledger</p></div>
+        <div className="flex items-center gap-4">
+          <img src="/logo.png" alt="Apollo Logo" className="h-12 w-auto" />
+          <div><h1 className="text-xl font-bold">Apollo-Hind Printer Controller</h1><p className="text-xs text-slate-500">Hardware & Consumables Ledger</p></div>
+        </div>
         <div className="flex gap-4">
-          <button onClick={fetchData} disabled={loading} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">↻ Sync</button>
+          <button onClick={fetchData} disabled={loading} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium" style={{ opacity: loading ? 0.6 : 1 }}>
+            <span style={{ display: 'inline-block', animation: loading ? 'spin 1s linear infinite' : 'none' }}>↻</span> Sync
+          </button>
           {printers.length === 0 && (
             <button onClick={createSampleData} disabled={loading} className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm font-medium">+ Sample Data</button>
           )}
@@ -253,23 +309,25 @@ export default function CommandCenter() {
               {selP && (
                 <div className="mt-4 bg-slate-50 p-4 rounded border">
                   <h3 className="font-bold text-sm mb-3">Department Transaction History</h3>
-                  <div className="max-h-[200px] overflow-y-auto">
+                  <div className="max-h-[250px] overflow-y-auto">
                     <table className="w-full text-xs">
                       <thead className="bg-white border-b sticky top-0">
                         <tr>
+                          <th className="p-2 text-left">Date</th>
+                          <th className="p-2 text-left">Time</th>
                           <th className="p-2 text-left">Cartridge</th>
                           <th className="p-2 text-center">Issued</th>
                           <th className="p-2 text-center">Returned</th>
-                          <th className="p-2 text-left">Date</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
                         {txs.filter(t => t.dept === selP.label && (t.action === 'ISSUED' || t.action === 'RECEIVED')).map((t, idx) => (
                           <tr key={idx} className="hover:bg-white">
+                            <td className="p-2 text-xs">{formatDate(t.created_at)}</td>
+                            <td className="p-2 text-xs">{formatTime(t.created_at)}</td>
                             <td className="p-2 font-medium">{t.model}</td>
-                            <td className="p-2 text-center text-red-600">{t.action === 'ISSUED' ? t.qty : '-'}</td>
-                            <td className="p-2 text-center text-green-600">{t.action === 'RECEIVED' ? t.qty : '-'}</td>
-                            <td className="p-2 text-xs">{new Date(t.created_at).toLocaleDateString()}</td>
+                            <td className="p-2 text-center text-red-600 font-bold">{t.action === 'ISSUED' ? t.qty : '-'}</td>
+                            <td className="p-2 text-center text-green-600 font-bold">{t.action === 'RECEIVED' ? t.qty : '-'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -287,25 +345,31 @@ export default function CommandCenter() {
                     <div><p className="text-slate-500 text-xs">Printer</p><p className="font-bold">{selP.pModel}</p><p className="text-xs">SN: {selP.serial}</p></div>
                     <div><p className="text-slate-500 text-xs">Cartridge</p><p className="font-bold bg-white px-2 py-1 rounded inline-block border">{selP.cModel}</p><p className={`text-xs mt-1 font-bold ${selP.stock <= 3 ? 'text-red-600' : 'text-green-600'}`}>Stock: {selP.stock}</p></div>
                   </div>
-                  <div className="flex gap-2 mb-4">
-                    <button onClick={() => setMode("STOCK")} className={`flex-1 py-2 text-sm font-medium rounded ${mode === "STOCK" ? "bg-slate-800 text-white" : "bg-slate-100"}`}>Cartridge</button>
-                    <button onClick={() => setMode("REPAIR")} className={`flex-1 py-2 text-sm font-medium rounded ${mode === "REPAIR" ? "bg-amber-100 text-amber-900" : "bg-slate-100"}`}>Repair</button>
-                  </div>
-                  {mode === "STOCK" && (
-                    <div className="space-y-4">
-                      <input type="number" min="1" value={qty} onChange={e => setQty(Number(e.target.value))} className="w-full p-2 border rounded" />
-                      <div className="grid grid-cols-2 gap-2">
-                        <button onClick={() => doStock("ISSUED")} disabled={loading || selP.stock < qty} className="bg-slate-800 text-white py-2 rounded">Issue (-)</button>
-                        <button onClick={() => doStock("RECEIVED")} disabled={loading} className="border border-slate-300 py-2 rounded">Receive (+)</button>
+                  <div className="space-y-3">
+                    <div className="bg-green-50 p-4 rounded border border-green-200">
+                      <h3 className="font-bold text-sm text-green-900 mb-3">Issue New Cartridge</h3>
+                      <div className="flex gap-2">
+                        <input type="number" min="1" value={qty} onChange={e => setQty(Number(e.target.value))} placeholder="Qty" className="flex-1 p-2 border rounded text-sm" />
+                        <button onClick={() => doStock("ISSUED")} disabled={loading} className="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50">Issue</button>
                       </div>
                     </div>
-                  )}
-                  {mode === "REPAIR" && (
-                    <div className="space-y-4">
-                      <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Repair notes..." className="w-full p-2 border border-amber-200 rounded" />
-                      <button onClick={doRepair} disabled={loading || !notes} className="w-full bg-amber-500 text-white py-2 rounded">Log Repair</button>
+
+                    <div className="bg-blue-50 p-4 rounded border border-blue-200">
+                      <h3 className="font-bold text-sm text-blue-900 mb-3">Receive Returned Cartridge</h3>
+                      <div className="flex gap-2">
+                        <input type="number" min="1" value={qty} onChange={e => setQty(Number(e.target.value))} placeholder="Qty" className="flex-1 p-2 border rounded text-sm" />
+                        <button onClick={() => doStock("RECEIVED")} disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">Receive</button>
+                      </div>
                     </div>
-                  )}
+
+                    <div className="bg-amber-50 p-4 rounded border border-amber-200">
+                      <h3 className="font-bold text-sm text-amber-900 mb-3">Repair Printer</h3>
+                      <div className="space-y-2">
+                        <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Repair details..." className="w-full p-2 border border-amber-200 rounded text-sm" />
+                        <button onClick={doRepair} disabled={loading || !notes} className="w-full bg-amber-500 text-white py-2 rounded text-sm font-medium hover:bg-amber-600">Log Repair</button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -316,7 +380,7 @@ export default function CommandCenter() {
                 <table className="w-full text-left text-sm"><thead className="bg-white sticky top-0 border-b"><tr><th className="p-3">Time</th><th className="p-3">Details</th><th className="p-3">Qty</th><th className="p-3">Action</th><th className="p-3">Void</th></tr></thead><tbody className="divide-y">
                   {txs.map(t => (
                     <tr key={t.id} className="hover:bg-slate-50">
-                      <td className="p-3 text-xs">{new Date(t.created_at).toLocaleDateString()}<br/>{new Date(t.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                      <td className="p-3 text-xs">{formatDate(t.created_at)}<br/>{formatTime(t.created_at)}</td>
                       <td className="p-3"><p className="font-bold">{t.dept}</p><p className="text-xs text-slate-500">{t.model}</p>{t.notes && <p className="text-xs italic text-slate-400 mt-1">Note: {t.notes}</p>}</td>
                       <td className="p-3 font-bold">{t.qty > 0 ? t.qty : '-'}</td>
                       <td className="p-3"><span className={`text-xs px-2 py-1 rounded border ${t.action === 'ISSUED' ? 'bg-indigo-50 text-indigo-700' : t.action === 'RECEIVED' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>{t.action}</span></td>
@@ -359,7 +423,10 @@ export default function CommandCenter() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-6">
               <div className="bg-white p-6 rounded border shadow-sm">
-                <h2 className="font-bold mb-4">Master Stock</h2>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="font-bold">Master Stock</h2>
+                  <button onClick={exportStockToExcel} className="text-xs text-green-700 bg-green-50 px-3 py-1 rounded border border-green-200 hover:bg-green-100">📊 Export</button>
+                </div>
                 <div className="max-h-[300px] overflow-y-auto space-y-2 mb-6">
                   {catalog.map(c => <div key={c.id} className="flex justify-between p-3 bg-slate-50 border rounded text-sm"><span className="font-bold">{c.model_name}</span><span className={`px-2 py-1 rounded font-bold ${c.current_stock <= 3 ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-700'}`}>{c.current_stock}</span></div>)}
                 </div>
@@ -368,6 +435,34 @@ export default function CommandCenter() {
                   <select className="w-full p-2 border rounded text-sm" onChange={e => setSelC(Number(e.target.value))} value={selC || ""}><option value="" disabled>Select model...</option>{catalog.map(c => <option key={c.id} value={c.id}>{c.model_name}</option>)}</select>
                   <input type="number" value={newStock || ""} onChange={e => setNewStock(Number(e.target.value))} placeholder="Qty" className="w-full p-2 border rounded text-sm" />
                   <button onClick={addStock} disabled={!selC || newStock <= 0} className="w-full bg-slate-800 text-white py-2 rounded text-sm">Commit Stock</button>
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded border shadow-sm">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="font-bold">Master Printers Inventory</h2>
+                  <button onClick={exportPrintersToExcel} className="text-xs text-blue-700 bg-blue-50 px-3 py-1 rounded border border-blue-200 hover:bg-blue-100">📊 Export</button>
+                </div>
+                <div className="max-h-[400px] overflow-y-auto space-y-3 mb-6">
+                  {printers.length === 0 ? (
+                    <p className="text-sm text-slate-500 text-center py-4">No printers registered yet</p>
+                  ) : (
+                    printers.map(p => (
+                      <div key={p.value} className="bg-slate-50 p-3 border rounded text-sm">
+                        <p className="font-bold text-slate-800">{p.label}</p>
+                        <p className="text-xs text-slate-600 mt-1">📍 Location: <span className="font-medium">{p.label}</span></p>
+                        <p className="text-xs text-slate-600">🖨️ Model: <span className="font-medium">{p.pModel}</span></p>
+                        <p className="text-xs text-slate-600">🔢 Serial: <span className="font-medium">{p.serial}</span></p>
+                        <p className="text-xs text-slate-600">🔧 Cartridge: <span className="font-medium">{p.cModel}</span></p>
+                        <p className="text-xs mt-2">
+                          <span className={`px-2 py-1 rounded text-xs font-bold ${p.stock <= 3 ? 'bg-red-100 text-red-700' : p.stock <= 7 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>Stock: {p.stock}</span>
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="bg-blue-50 p-3 border border-blue-200 rounded text-xs text-blue-800">
+                  <p className="font-bold">Total Printers: {printers.length}</p>
                 </div>
               </div>
             </div>
